@@ -1,5 +1,5 @@
-from rest_framework.decorators import api_view
 from rest_framework.response import Response
+from rest_framework.decorators import api_view
 from django.views.decorators.csrf import csrf_exempt
 
 from .models import CarModel
@@ -11,31 +11,29 @@ def get_car_price(request):
 
     car_name = request.data.get("name")
 
-
     if not car_name:
-        return Response({
-            "error": "name is required"
-        }, status=400)
-
+        return Response(
+            "Car name is required",
+            status=400
+        )
 
     try:
         car = CarModel.objects.get(
-            name=car_name
+            name__iexact=car_name.strip()
         )
 
     except CarModel.DoesNotExist:
+        return Response(
+            "Car model not found",
+            status=404
+        )
 
-        return Response({
-            "error": "Car model not found"
-        }, status=404)
+
+    quote_message = (
+        f"Vehicle: {car.name} | "
+        f"Starting Price: ${car.base_price} | "
+        f"Rate: ${car.per_km_rate}/mi"
+    )
 
 
-    return Response({
-
-        "name": car.name,
-
-        "base_price": f"${car.base_price}",
-
-        "per_mi_rate": f"${car.per_km_rate}/mi"
-
-    })
+    return Response(quote_message)
