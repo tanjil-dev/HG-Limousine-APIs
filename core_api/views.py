@@ -47,15 +47,24 @@ def get_car_price(request):
     return Response(quote_message)
 
 
-
 class TidioBookingWebhookView(APIView):
-    """
-    Handles JSON payload from Tidio flow and emails both Customer and Admin.
-    """
     authentication_classes = []
     permission_classes = []
 
     def post(self, request, *args, **kwargs):
+        # Verify API Key from Tidio Header
+        api_key = request.headers.get('X-API-KEY') or request.headers.get('Authorization')
+
+        # If using Bearer format, clean up "Bearer " prefix if present
+        if api_key and api_key.startswith('Bearer '):
+            api_key = api_key.replace('Bearer ', '')
+
+        if not api_key or api_key != settings.TIDIO_API_KEY:
+            return Response(
+                "Unauthorized: Invalid or missing API Key.",
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+
         serializer = TidioBookingSerializer(data=request.data)
 
         if not serializer.is_valid():
@@ -74,9 +83,7 @@ class TidioBookingWebhookView(APIView):
         phone = data.get('phone_number')
         customer_email = data.get('email')
 
-        # ------------------------------------
-        # 1. Send Email to Customer
-        # ------------------------------------
+        # 1. Email to Customer
         customer_subject = f"Your Ride Request Confirmation - {service_type}"
         customer_message = (
             f"Hello {name},\n\n"
@@ -89,7 +96,7 @@ class TidioBookingWebhookView(APIView):
             f"• Passengers: {passengers}\n"
             f"• Vehicle Preference: {vehicle}\n\n"
             f"Our team is reviewing your request and will follow up with you shortly at {phone}.\n\n"
-            f"Best regards,\nH&G Limousine"
+            f"Best regards,\nBooking Team"
         )
 
         try:
@@ -102,13 +109,11 @@ class TidioBookingWebhookView(APIView):
             )
         except Exception as e:
             return Response(
-                {"error": f"Failed to send confirmation email to customer: {str(e)}"},
+                f"Failed to send email to customer: {str(e)}",
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
-        # ------------------------------------
-        # 2. Send Email to Admin
-        # ------------------------------------
+        # 2. Email to Admin
         admin_subject = f"New Booking Request ({service_type}) - {name}"
         admin_message = (
             f"New booking details submitted via Tidio Chat:\n\n"
@@ -135,7 +140,7 @@ class TidioBookingWebhookView(APIView):
             )
         except Exception as e:
             return Response(
-                {"error": f"Failed to send alert email to admin: {str(e)}"},
+                f"Failed to send email to admin: {str(e)}",
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
