@@ -2,6 +2,14 @@ from rest_framework.response import Response
 from rest_framework.decorators import api_view
 from django.views.decorators.csrf import csrf_exempt
 
+
+from rest_framework.views import APIView
+from rest_framework import status
+from django.core.mail import send_mail
+from django.conf import settings
+
+from .serializers import TidioBookingSerializer
+
 from .models import CarModel
 
 
@@ -37,3 +45,100 @@ def get_car_price(request):
 
 
     return Response(quote_message)
+
+
+class TidioBookingWebhookView(APIView):
+    """
+    Handles JSON payload from Tidio flow and emails both Customer and Admin.
+    """
+    authentication_classes = []
+    permission_classes = []
+
+    def post(self, request, *args, **kwargs):
+        serializer = TidioBookingSerializer(data=request.data)
+
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        data = serializer.validated_data
+
+        service_type = data.get('service_type')
+        pickup = data.get('pickup_location')
+        dropoff = data.get('dropoff_location')
+        date = data.get('date')
+        time = data.get('pickup_time')
+        passengers = data.get('passengers')
+        vehicle = data.get('vehicle_preference', 'N/A')
+        name = data.get('name')
+        phone = data.get('phone_number')
+        customer_email = data.get('email')
+
+        # ------------------------------------
+        # 1. Send Email to Customer
+        # ------------------------------------
+        customer_subject = f"Your Ride Request Confirmation - {service_type}"
+        customer_message = (
+            f"Hello {name},\n\n"
+            f"Thank you for reaching out! We have received your booking request details:\n\n"
+            f"• Service Type: {service_type}\n"
+            f"• Pickup Location: {pickup}\n"
+            f"• Drop-off Location: {dropoff}\n"
+            f"• Date: {date}\n"
+            f"• Pickup Time: {time}\n"
+            f"• Passengers: {passengers}\n"
+            f"• Vehicle Preference: {vehicle}\n\n"
+            f"Our team is reviewing your request and will follow up with you shortly at {phone}.\n\n"
+            f"Best regards,\nH&G Limousine"
+        )
+
+        try:
+            send_mail(
+                subject=customer_subject,
+                message=customer_message,
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[customer_email],
+                fail_silently=False,
+            )
+        except Exception as e:
+            return Response(
+                {"error": f"Failed to send confirmation email to customer: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+        # ------------------------------------
+        # 2. Send Email to Admin
+        # ------------------------------------
+        admin_subject = f"New Booking Request ({service_type}) - {name}"
+        admin_message = (
+            f"New booking details submitted via Tidio Chat:\n\n"
+            f"Customer Name: {name}\n"
+            f"Email: {customer_email}\n"
+            f"Phone: {phone}\n\n"
+            f"--- Service Details ---\n"
+            f"Service Type: {service_type}\n"
+            f"Pickup Location: {pickup}\n"
+            f"Drop-off Location: {dropoff}\n"
+            f"Date: {date}\n"
+            f"Time: {time}\n"
+            f"Passengers: {passengers}\n"
+            f"Vehicle Preference: {vehicle}\n"
+        )
+
+        try:
+            send_mail(
+                subject=admin_subject,
+                message=admin_message,
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[settings.ADMIN_EMAIL],
+                fail_silently=False,
+            )
+        except Exception as e:
+            return Response(
+                {"error": f"Failed to send alert email to admin: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+        return Response(
+            f"Booking request received and confirmation email sent to {customer_email}. Soon our team will contact you via {phone}.",
+            status=status.HTTP_200_OK
+        )
