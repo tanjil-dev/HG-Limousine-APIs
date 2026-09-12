@@ -47,6 +47,7 @@ def get_car_price(request):
     return Response(quote_message)
 
 
+
 class TidioBookingWebhookView(APIView):
     """
     Handles JSON payload from Tidio flow and emails both Customer and Admin.
